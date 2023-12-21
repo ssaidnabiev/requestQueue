@@ -100,7 +100,12 @@ const processNextQueue = async () => {
 
         await Promise.all(dbWritePromises)
     } catch (error) {
-        helpers.sendErrorToGroup(error)
+        await fetch(`https://api.telegram.org/bot5760755942:AAGCs1tHVD1l6NSQO_X70ZiTBWr-D48MJ6k/sendMessage`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({chat_id: 510469754, text: `catched - requests error - ${error.name} - ${JSON.stringify(error.message)}`})
+                    })
+        await helpers.sendErrorToGroup(error)
     }
 }
 
@@ -163,7 +168,7 @@ const processNextHostMessages = async () => {
 
         await Promise.all(dbWritePromises)
     } catch (error) {
-        helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error)
     }
     
 }
