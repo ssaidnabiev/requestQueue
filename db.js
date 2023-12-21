@@ -101,11 +101,9 @@ async function getBulkStatusChanges(tableName) {
         `select 
             b.*
         from ${tableName} b
-        where b.id in (
-            select min(b2.id) 
-            from ${tableName} b2
-            where b2.status = 0
-        )`
+        where b.status = 0
+        order by b.id asc
+        limit 10`
     
     try {
         const result = await pgClient.query(sql)
