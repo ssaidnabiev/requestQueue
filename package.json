@@ -1,0 +1,19 @@
+{
+  "name": "request_queue",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-schedule": "^2.1.1",
+    "os": "^0.1.2",
+    "pg": "^8.11.1",
+    "stream-promise": "^3.2.0"
+  }
+}
