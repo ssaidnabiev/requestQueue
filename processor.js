@@ -194,6 +194,7 @@ const runRequestHandler = () => {
 
 const runChangedOrderStatusesRequestHandler = async () => {
     await processNextHostMessages()
+    runChangedOrderStatusesRequestHandler()
 }
 
 module.exports = {runRequestHandler, runChangedOrderStatusesRequestHandler, runClearDBSchedule}
