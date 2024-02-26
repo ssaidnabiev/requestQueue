@@ -8,43 +8,46 @@ app.use(express.json())
 const db = require('./db.js')
 
 app.get('/', (req, res) => {
-    res.end('false')
+    res.end('It works!')
 })
 
 app.post('/addRequest', async (req, res) => {
     const {chat_id, url, method, host, ...params} = req.body
 
     res.end(
-        JSON.stringify(
-            await db.addRequest(db.requestsTableName, {
-                chat_id: chat_id,
-                url: url,
-                method: method,
-                host: host,
-                params: JSON.stringify({...params, chat_id: chat_id}),
-                status: 0,
-                time: helpers.toSqlDateString(new Date()),
-                token: url.split('/').find(chunk => chunk.includes('bot')).split('bot')[1]
-            })
-        )
+        JSON.stringify({
+            ok: true
+        })
     )
+
+    await db.addRequest(db.requestsTableName, {
+        chat_id: chat_id,
+        url: url,
+        method: method,
+        host: host,
+        params: JSON.stringify({...params, chat_id: chat_id}),
+        status: 0,
+        time: helpers.toSqlDateString(new Date()),
+        token: url.split('/').find(chunk => chunk.includes('bot')).split('bot')[1]
+    })
 })
 
 app.post('/bulkStatusChange', async (req, res) => {
     const {host, data, newStatus} = req.body
 
     res.end(
-        newStatus ?
-            JSON.stringify(
-                await db.addRequest(db.bulkStatusChangeTableName, {
-                    host: host,
-                    data: JSON.stringify(data),
-                    time: helpers.toSqlDateString(new Date()),
-                    status: 0,
-                    transition_status: newStatus
-                })
-            ) : {ok: true}
+        JSON.stringify({
+            ok: true
+        })
     )
+
+    await db.addRequest(db.bulkStatusChangeTableName, {
+        host: host,
+        data: JSON.stringify(data),
+        time: helpers.toSqlDateString(new Date()),
+        status: 0,
+        transition_status: newStatus
+    })
 })
 
 app.listen(3000, async () => {
