@@ -15,6 +15,10 @@ const bulkStatusChangeTableName = 'changed_order_statuses'
 
 async function newPgClient() {
     const pgClient = new pg.Client(pgDbDetails)
+    pgClient.on('error', async error => {
+        await helpers.sendErrorToGroup(error)
+        await pgClient.end()
+    })
     await pgClient.connect()
     return pgClient
 }
