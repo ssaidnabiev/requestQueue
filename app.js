@@ -8,7 +8,7 @@ app.use(express.json({limit: '50mb'}))
 const db = require('./db.js')
 
 app.get('/', (req, res) => {
-    res.end('It works!')
+    res.end('It works! Request queue')
 })
 
 app.post('/addRequest', async (req, res) => {

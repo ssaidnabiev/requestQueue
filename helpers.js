@@ -21,7 +21,7 @@ function toSqlDateString(date) {
 async function sendErrorToGroup(err, origin='') {
     
     const apiUrl = 'https://api.telegram.org/bot5849831361:AAFsY3mWq1S7cSDQxQgBBH9J3QG92PMDJVY/'
-    const groupID = -668933605
+    const groupID = -1003449990258
     
     const resp = await fetch(`${apiUrl}sendMessage`, {
         method: 'POST',
