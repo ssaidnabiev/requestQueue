@@ -194,7 +194,7 @@ const runRequestHandler = () => {
             await helpers.sendErrorToGroup(error)
         }
         runRequestHandler()
-    }, 3000)
+    }, 1000)
 }
 
 const runChangedOrderStatusesRequestHandler = async () => {

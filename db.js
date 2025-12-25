@@ -1,35 +1,25 @@
-const pg = require('pg')
+const pool = require('./pool');
 const helpers = require('./helpers.js')
-
-const pgDbDetails = {
-    user: 'postgres',
-    host: 'localhost',
-    database: 'postgres',
-    password: 'M9[eL4*Bd%G`Q~~q',
-    port: 5432
-}
 
 const requestsTableName = 'requests'
 const bulkStatusChangeTableName = 'changed_order_statuses'
 
-
-async function newPgClient() {
-    const pgClient = new pg.Client(pgDbDetails)
-    pgClient.on('error', async error => {
-        await helpers.sendErrorToGroup(error)
-        await pgClient.end()
-    })
-    await pgClient.connect()
-    return pgClient
-}
+// async function newPgClient() {
+//     const pgClient = new pg.Client(pgDbDetails)
+//     pgClient.on('error', async error => {
+//         await helpers.sendErrorToGroup(error)
+//         await pgClient.end()
+//     })
+//     await pgClient.connect()
+//     return pgClient
+// }
 
 async function addRequest(tableName, newRow) {
 
-    const pgClient = await newPgClient()
+    // const pgClient = await newPgClient()
 
     try {
         const values = []
-        
         const text = `insert into ${tableName}(${
             Object.keys(newRow).map(key => {
                 values.push(newRow[key])
@@ -41,20 +31,20 @@ async function addRequest(tableName, newRow) {
             }).join(',')
         })`
 
-        await pgClient.query({text: text, values: values})
+        await pool.query({text: text, values: values})
         
     } catch (error) {
         await helpers.sendErrorToGroup(error)
-        await pgClient.end()
+        // await pgClient.end()
         return {ok: false, error_code: 500, description: error.message}
     }
 
-    await pgClient.end()
+    // await pgClient.end()
     return {ok: true}
 }
 
 async function updateRequest(tableName, id, newRow) {
-    const pgClient = await newPgClient()
+    // const pgClient = await newPgClient()
 
     let colCount = 1
     const values = [id]
@@ -67,16 +57,16 @@ async function updateRequest(tableName, id, newRow) {
     } where id=$1`
 
     try {
-        await pgClient.query({text: text, values: values})
+        await pool.query({text: text, values: values})
     } catch (error) {
         await helpers.sendErrorToGroup(error)
     }
     
-    await pgClient.end()
+    // await pgClient.end()
 }
 
 async function getRequests(tableName) {
-    const pgClient = await newPgClient()
+    // const pgClient = await newPgClient()
     const sql =
         `select 
             r.*
@@ -85,22 +75,22 @@ async function getRequests(tableName) {
             select min(r2.id) 
             from ${tableName} r2
             where r2.status = 0
-            group by r2.chat_id
+            group by r2.chat_id, r2.token
         )`
     
     try {
-        const result = await pgClient.query(sql)
-        await pgClient.end()
+        const result = await pool.query(sql)
+        // await pgClient.end()
         return result
     } catch (error) {
         await helpers.sendErrorToGroup(error)
-        await pgClient.end()
+        // await pgClient.end()
         return false
     }
 }
 
 async function getBulkStatusChanges(tableName) {
-    const pgClient = await newPgClient()
+    // const pgClient = await newPgClient()
     const sql =
         `select 
             b.*
@@ -110,27 +100,27 @@ async function getBulkStatusChanges(tableName) {
         limit 10`
     
     try {
-        const result = await pgClient.query(sql)
-        await pgClient.end()
+        const result = await pool.query(sql)
+        // await pgClient.end()
         return result
     } catch (error) {
         await helpers.sendErrorToGroup(error)
-        await pgClient.end()
+        // await pgClient.end()
         return false
     }
 }
 
 async function clearDatabase(tableName) {
-    const pgClient = await newPgClient()
+    // const pgClient = await newPgClient()
     try {
         const sql = `delete from ${tableName} where time < (now()-interval '1 day')::timestamp`
-        await pgClient.query(sql)
+        await pool.query(sql)
     } catch (error) {
         await helpers.sendErrorToGroup(error)
     }
     
-    await pgClient.end()
+    // await pgClient.end()
 }
 
 
-module.exports = {newPgClient, addRequest, updateRequest, requestsTableName, bulkStatusChangeTableName, getRequests, getBulkStatusChanges, clearDatabase}
+module.exports = {addRequest, updateRequest, requestsTableName, bulkStatusChangeTableName, getRequests, getBulkStatusChanges, clearDatabase}

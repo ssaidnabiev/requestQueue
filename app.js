@@ -3,7 +3,7 @@ const app = express()
 const processor = require('./processor.js')
 const helpers = require('./helpers.js')
 
-app.use(express.json())
+app.use(express.json({limit: '50mb'}))
 
 const db = require('./db.js')
 
@@ -19,7 +19,12 @@ app.post('/addRequest', async (req, res) => {
             ok: true
         })
     )
-
+    let token = ''
+    try {
+        token = url.split('/').find(chunk => chunk.includes('bot')).split('bot')[1]
+    } catch (error) {
+        await helpers.sendErrorToGroup(error)
+    }
     await db.addRequest(db.requestsTableName, {
         chat_id: chat_id,
         url: url,
@@ -28,7 +33,7 @@ app.post('/addRequest', async (req, res) => {
         params: JSON.stringify({...params, chat_id: chat_id}),
         status: 0,
         time: helpers.toSqlDateString(new Date()),
-        token: url.split('/').find(chunk => chunk.includes('bot')).split('bot')[1]
+        token: token
     })
 })
 
