@@ -60,6 +60,7 @@ app.listen(3000, async () => {
     processor.runRequestHandler()
     processor.runChangedOrderStatusesRequestHandler()
     processor.runClearDBSchedule()
+    processor.runDisabledChatsHandler()
 })
 
 // report error to group
@@ -68,4 +69,5 @@ process.on('uncaughtException', async (err, origin) => {
     processor.runRequestHandler()
     processor.runChangedOrderStatusesRequestHandler()
     processor.runClearDBSchedule()
+    processor.runDisabledChatsHandler()
 })

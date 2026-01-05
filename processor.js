@@ -83,11 +83,11 @@ const processNextQueue = async () => {
                         params.chat_id = decoded.parameters.migrate_to_chat_id
                         row.params = JSON.stringify(params)
                     } else {
-                        row.status = -1
+                        row.status = -2
                         row.error = `${decoded.error_code}: ${decoded.description}`
-                        if (!decoded.description.includes('chat not found')) {
-                            await helpers.sendErrorToGroup({message: `\nHOST: ${row.host}\nMETHOD: ${row.method}\nERROR: ${decoded.error_code}: ${decoded.description}`})
-                        }
+                        // if (!decoded.description.includes('chat not found')) {
+                        //     await helpers.sendErrorToGroup({message: `\nHOST: ${row.host}\nMETHOD: ${row.method}\nERROR: ${decoded.error_code}: ${decoded.description}`})
+                        // }
                     }
                 } else {
                     row.status = -1
@@ -168,6 +168,66 @@ const processNextHostMessages = async () => {
     
 }
 
+const processNextDisabledChats = async () => {
+    const result = await db.getDisabledChatRequests(db.requestsTableName)
+    try {
+        if (result === false) {return}
+        const groupedByHost = result.rows.reduce((acc, row) => {
+            const params = JSON.parse(row.params)
+            const messageThreadId = params['message_thread_id'] ?? null
+            if (!acc[row.host]) {acc[row.host] = []}
+            if (!acc[row.host][row.chat_id]) {acc[row.host][row.chat_id] = {}}
+            if (messageThreadId) {
+                acc[row.host][row.chat_id][messageThreadId] = null
+            }
+            return acc
+        }, {})
+
+        const responsePromises = Object.keys(groupedByHost).map(async host => {
+            const entries = Object.keys(groupedByHost[host]).reduce((acc, chatId) => {
+                if (Object.keys(groupedByHost[host][chatId]).length) {
+                    acc = [...acc, ...Object.keys(groupedByHost[host][chatId]).map(messageThreadId => ({chat_id: chatId, message_thread_id: messageThreadId}))]
+                } else {
+                    acc.push({chat_id: chatId})
+                }
+                return acc
+            }, [])
+            try {
+                const responsePromise = await fetch(`https://${host}/api/disabledChats`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({entries: entries})
+                })
+                return responsePromise
+            } catch (error) {
+                return Promise.resolve({fetchFailed: true, error: error})
+            }
+            
+        })
+        const responses = await Promise.all(responsePromises)
+        const decodePromises = responses.map(async response => {
+            if (!response.fetchFailed) {
+                return await response.json()
+            } else {
+                return Promise.resolve({ok:false, error_code: 500, description: response.error.message})
+            }
+        })
+        const decodedRows = await Promise.all(decodePromises)
+        const dbWritePromises = decodedRows.map(async (decoded, index) => {
+            const {id, ...row} = result.rows[index]
+            if (decoded.success) {
+                row.status = 2
+                row.update = helpers.toSqlDateString(new Date())
+                return await db.updateRequest(db.requestsTableName, id, row)
+            }
+            return Promise.resolve(true)
+        })
+        await Promise.all(dbWritePromises)
+    } catch (error) {
+        await helpers.sendErrorToGroup(error)
+    }
+}
+
 const runClearDBSchedule = async () => {
 
     const rule = new schedule.RecurrenceRule()
@@ -187,7 +247,6 @@ const runClearDBSchedule = async () => {
 
 const runRequestHandler = () => {
     setTimeout(async () => {
-        
         try {
             await processNextQueue()
         } catch (error) {
@@ -202,4 +261,13 @@ const runChangedOrderStatusesRequestHandler = async () => {
     runChangedOrderStatusesRequestHandler()
 }
 
-module.exports = {runRequestHandler, runChangedOrderStatusesRequestHandler, runClearDBSchedule}
+const runDisabledChatsHandler = async () => {
+    try {
+        await processNextDisabledChats()
+    } catch (error) {
+        await helpers.sendErrorToGroup(error)
+    }
+    runDisabledChatsHandler()
+}
+
+module.exports = {runRequestHandler, runChangedOrderStatusesRequestHandler, runClearDBSchedule, runDisabledChatsHandler}

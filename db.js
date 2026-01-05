@@ -89,6 +89,25 @@ async function getRequests(tableName) {
     }
 }
 
+async function getDisabledChatRequests(tableName) {
+    // const pgClient = await newPgClient()
+    const sql =
+        `select 
+            r.*
+        from ${tableName} r
+        where status = -2`
+    
+    try {
+        const result = await pool.query(sql)
+        // await pgClient.end()
+        return result
+    } catch (error) {
+        await helpers.sendErrorToGroup(error)
+        // await pgClient.end()
+        return false
+    }
+}
+
 async function getBulkStatusChanges(tableName) {
     // const pgClient = await newPgClient()
     const sql =
@@ -123,4 +142,4 @@ async function clearDatabase(tableName) {
 }
 
 
-module.exports = {addRequest, updateRequest, requestsTableName, bulkStatusChangeTableName, getRequests, getBulkStatusChanges, clearDatabase}
+module.exports = {addRequest, updateRequest, requestsTableName, bulkStatusChangeTableName, getRequests, getBulkStatusChanges, clearDatabase, getDisabledChatRequests}
