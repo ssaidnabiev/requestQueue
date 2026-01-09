@@ -19,20 +19,42 @@ function toSqlDateString(date) {
 }
 
 async function sendErrorToGroup(err, origin='') {
-    
-    const apiUrl = 'https://api.telegram.org/bot5849831361:AAFsY3mWq1S7cSDQxQgBBH9J3QG92PMDJVY/'
-    const groupID = -1003449990258
-    
-    const resp = await fetch(`${apiUrl}sendMessage`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            chat_id: groupID,
-            text: 
-                `<b>${String(os.hostname())}</b>\nCaught exception: ${err.message}\nException origin: ${origin}`,
-            parse_mode: 'HTML' 
+    let error2 = null
+    try {
+        const apiUrl = 'https://api.telegram.org/bot5849831361:AAFsY3mWq1S7cSDQxQgBBH9J3QG92PMDJVY/'
+        const groupID = -1003449990258
+        
+        const resp = await fetch(`${apiUrl}sendMessage`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                chat_id: groupID,
+                text: 
+                    `<b>${String(os.hostname())}</b>\nCaught exception: ${err.message}\nException origin: ${origin}`,
+                parse_mode: 'HTML' 
+            })
         })
-    })
+    } catch (error) {
+        try {
+            const apiUrl = 'https://api.telegram.org/bot8391939404:AAF6oVi6wdVsWzlLAKVIt1aZJ5P-9X4gz2s/'
+            const chatID = 7976312976
+            
+            const resp = await fetch(`${apiUrl}sendMessage`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    chat_id: chatID,
+                    text: 
+                        `<b>${String(os.hostname())}</b>\nCaught exception: ${err.message}\nException origin: ${origin}`,
+                    parse_mode: 'HTML' 
+                })
+            })
+        } catch (errorInner) {
+            error2 = errorInner
+        }
+    } finally {
+        console.error(error2)
+    }
 }
 
 function generateTelegramApiRequests(data, token, host) {
