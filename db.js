@@ -34,7 +34,7 @@ async function addRequest(tableName, newRow) {
         await pool.query({text: text, values: values})
         
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'db.js -> addRequest()')
         // await pgClient.end()
         return {ok: false, error_code: 500, description: error.message}
     }
@@ -59,7 +59,7 @@ async function updateRequest(tableName, id, newRow) {
     try {
         await pool.query({text: text, values: values})
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'db.js -> updateRequest()')
     }
     
     // await pgClient.end()
@@ -83,7 +83,7 @@ async function getRequests(tableName) {
         // await pgClient.end()
         return result
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'db.js -> getRequests()')
         // await pgClient.end()
         return false
     }
@@ -102,7 +102,7 @@ async function getDisabledChatRequests(tableName) {
         // await pgClient.end()
         return result
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'db.js -> getRequests()')
         // await pgClient.end()
         return false
     }
@@ -123,7 +123,7 @@ async function getBulkStatusChanges(tableName) {
         // await pgClient.end()
         return result
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'db.js -> getBulkStatusChanges()')
         // await pgClient.end()
         return false
     }
@@ -135,7 +135,7 @@ async function clearDatabase(tableName) {
         const sql = `delete from ${tableName} where time < (now()-interval '1 day')::timestamp`
         await pool.query(sql)
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'db.js -> clearDatabase')
     }
     
     // await pgClient.end()

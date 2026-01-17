@@ -1,4 +1,5 @@
 const os = require('os')
+const info = require('./info.js')
 
 function toSqlDateString(date) {
     const year = date.getFullYear()
@@ -21,8 +22,8 @@ function toSqlDateString(date) {
 async function sendErrorToGroup(err, origin='') {
     let error2 = null
     try {
-        const apiUrl = 'https://api.telegram.org/bot5849831361:AAFsY3mWq1S7cSDQxQgBBH9J3QG92PMDJVY/'
-        const groupID = -1003449990258
+        const apiUrl = `https://api.telegram.org/bot${info.botToken}/`
+        const groupID = info.tgGoupChatId
         
         const resp = await fetch(`${apiUrl}sendMessage`, {
             method: 'POST',
@@ -36,8 +37,8 @@ async function sendErrorToGroup(err, origin='') {
         })
     } catch (error) {
         try {
-            const apiUrl = 'https://api.telegram.org/bot8391939404:AAF6oVi6wdVsWzlLAKVIt1aZJ5P-9X4gz2s/'
-            const chatID = 7976312976
+            const apiUrl = `https://api.telegram.org/bot${info.botToken}/`
+            const chatID = info.tgFallbackChatId
             
             const resp = await fetch(`${apiUrl}sendMessage`, {
                 method: 'POST',

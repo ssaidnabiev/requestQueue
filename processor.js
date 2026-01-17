@@ -100,7 +100,7 @@ const processNextQueue = async () => {
 
         await Promise.all(dbWritePromises)
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, "processor.js -> processNextQueue()")
     }
 }
 
@@ -113,7 +113,7 @@ const processNextHostMessages = async () => {
             try {
                 const data = JSON.parse(row.data)
                 datas.push(data)
-                const responsePromise = await fetch(`${row.host}/orders/orders/inoutReporterMessages`, {
+                const responsePromise = await fetch(`${row.host}/api/order/inoutReporterMessages`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({data: data, status: row.transition_status})
@@ -163,7 +163,7 @@ const processNextHostMessages = async () => {
 
         await Promise.all(dbWritePromises)
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'processor.js -> processNextHostMessages()')
     }
     
 }
@@ -224,7 +224,7 @@ const processNextDisabledChats = async () => {
         })
         await Promise.all(dbWritePromises)
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'processor.js -> processNextDisabledChats()')
     }
 }
 
@@ -240,7 +240,7 @@ const runClearDBSchedule = async () => {
             await db.clearDatabase(db.requestsTableName)
             await db.clearDatabase(db.bulkStatusChangeTableName)
         } catch (error) {
-            await helpers.sendErrorToGroup(error)
+            await helpers.sendErrorToGroup(error, 'processor.js -> scheduleJob()')
         }
     })
 }
@@ -250,7 +250,7 @@ const runRequestHandler = () => {
         try {
             await processNextQueue()
         } catch (error) {
-            await helpers.sendErrorToGroup(error)
+            await helpers.sendErrorToGroup(error, 'processor.js -> runRequestHandler()')
         }
         runRequestHandler()
     }, 1000)
@@ -265,7 +265,7 @@ const runDisabledChatsHandler = async () => {
     try {
         await processNextDisabledChats()
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'processor.js -> runDisabledChatsHandler()')
     }
     runDisabledChatsHandler()
 }

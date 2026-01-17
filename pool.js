@@ -1,11 +1,12 @@
 const { Pool }  = require('pg')
 const helpers = require('./helpers.js')
+const info = require('./info.js')
 
 const pgDbDetails = {
-    user: 'postgres',
-    host: 'localhost',
-    database: 'postgres',
-    password: 'M9[eL4*Bd%G`Q~~q',
+    user: info.dbUser,
+    host: info.dbHost,
+    database: info.dbName,
+    password: info.dbPassword,
     port: 5432,
     max: 20,
     idleTimeoutMillis: 30000,
@@ -15,7 +16,7 @@ const pgDbDetails = {
 const pool = new Pool(pgDbDetails);
 
 pool.on('error', async (err) => {
-  await helpers.sendErrorToGroup(err);
+  await helpers.sendErrorToGroup(err, 'pool.js -> pool.on("error", async() => {...})');
   console.error('Unexpected PG pool error:', err);
 });
 

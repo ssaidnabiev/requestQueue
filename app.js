@@ -23,7 +23,7 @@ app.post('/addRequest', async (req, res) => {
     try {
         token = url.split('/').find(chunk => chunk.includes('bot')).split('bot')[1]
     } catch (error) {
-        await helpers.sendErrorToGroup(error)
+        await helpers.sendErrorToGroup(error, 'app.js -> /addRequest')
     }
     await db.addRequest(db.requestsTableName, {
         chat_id: chat_id,
