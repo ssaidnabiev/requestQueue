@@ -1,171 +1,150 @@
 const db = require('./db.js')
 const helpers = require('./helpers.js')
+const info = require('./info.js')
 const schedule = require('node-schedule')
 
+const { File } = require('node:buffer');
+if (!global.File) { global.File = File; }
+
+const { ProxyAgent } = require('undici');
+
 const processNextQueue = async () => {
-    const result = await db.getRequests(db.requestsTableName)
+    const result = await db.getRequests(db.requestsTableName);
+    if (!result || result.rows.length === 0) return;
+
     try {
-        if (result === false) {return}
+        const CHUNK_SIZE = 10; 
+        const rows = result.rows;
+        const allChunkPromises = [];
 
-        const responsePromises = result.rows.map(async row => {
-            try {
-                const responsePromise = await fetch(`${row.url}${row.method}`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: row.params
-                })
-                return responsePromise
-            } catch (error) {
-                return Promise.resolve({fetchFailed: true, error: error})
-            }
+        // 1. Group rows into chunks and assign a proxy to each group
+        for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+            const chunk = rows.slice(i, i + CHUNK_SIZE);
             
-        })
+            // Assign a unique proxy for this specific batch of 10
+            const chunkProxyAgent = new ProxyAgent(info.getRandomProxyUrl());
 
-        const responses = await Promise.all(responsePromises)
+            // 2. Map this chunk into a "Batch Promise"
+            const chunkPromise = Promise.all(chunk.map(async (row) => {
+                let decoded = null;
 
-        const decodePromises = responses.map(async response => {
-            if (!response.fetchFailed) {
-                return await response.json()
-            } else {
-                return Promise.resolve({ok:false, error_code: 500, description: response.error.message})
-            }
-        })
-
-        const decodedRows = await Promise.all(decodePromises)
-
-        const dbWritePromises = decodedRows.map(async (decoded, index) => {
-            const {id, ...row} = result.rows[index]
-            if (decoded.ok) {
-                row.status = 1
-            } else {
-                if (decoded.error_code == 400) {
-                    const params = JSON.parse(row.params)
-                    if (params.media) {
-
-                        let skipMedia = false
-                        const mediaParams = params.media
-
-                        params.media.forEach((media, index) => {
-
-                            if (skipMedia) {return}
-
-                            const urlSplitted = media.media.split('?')
-                            const queryString = urlSplitted.length > 1 ? urlSplitted[1] : '?attempt=0'
-                            const urlParams = new URLSearchParams(queryString)
-                            const currentAttempt = parseInt(urlParams.get('attempt')) + 1
-
-                            if (currentAttempt >= 3) {
-                                row.status = -1
-                                row.error = `${decoded.error_code}: ${decoded.description}`
-                                skipMedia = true
-                            } else {
-                                mediaParams[index].media = `${urlSplitted[0]}?attempt=${currentAttempt}`
-                            }
-
-                        })
-
-                        params.media = mediaParams
-                        row.params = JSON.stringify(params)
-                    } else if (params.photo) {
-
-                        const urlSplitted = params.photo.split('?')
-                        const queryString = urlSplitted.length > 1 ? urlSplitted[1] : '?attempt=0'
-                        const urlParams = new URLSearchParams(queryString)
-                        const currentAttempt = parseInt(urlParams.get('attempt')) + 1
-
-                        params.photo = `${urlSplitted[0]}?attempt=${currentAttempt}`
-                        row.params = JSON.stringify(params)
-                    } else if (decoded.parameters && decoded.parameters.migrate_to_chat_id) {
-
-                        // group was updated to a supergroup chat
-                        row.chat_id = decoded.parameters.migrate_to_chat_id
-                        const params = JSON.parse(row.params)
-                        params.chat_id = decoded.parameters.migrate_to_chat_id
-                        row.params = JSON.stringify(params)
-                    } else {
-                        row.status = -2
-                        row.error = `${decoded.error_code}: ${decoded.description}`
-                        // if (!decoded.description.includes('chat not found')) {
-                        //     await helpers.sendErrorToGroup({message: `\nHOST: ${row.host}\nMETHOD: ${row.method}\nERROR: ${decoded.error_code}: ${decoded.description}`})
-                        // }
-                    }
-                } else {
-                    row.status = -1
-                    row.error = `${decoded.error_code}: ${decoded.description}`
+                try {
+                    const response = await fetch(`${row.url}${row.method}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: row.params,
+                        dispatcher: chunkProxyAgent 
+                    });
+                    decoded = await response.json();
+                } catch (error) {
+                    decoded = { ok: false, error_code: 500, description: error.message };
                 }
-            }
-            row.update = helpers.toSqlDateString(new Date())
-            return await db.updateRequest(db.requestsTableName, id, row)
-        })
 
-        await Promise.all(dbWritePromises)
+                // --- Database Logic Start ---
+                const { id, ...rowUpdate } = row;
+
+                if (decoded.ok) {
+                    rowUpdate.status = 1;
+                } else {
+                    if (decoded.error_code == 400) {
+                        const params = JSON.parse(rowUpdate.params);
+                        if (params.media) {
+                            let skipMedia = false;
+                            params.media.forEach((media, index) => {
+                                if (skipMedia) return;
+                                const [urlBase, queryString] = media.media.split('?');
+                                const urlParams = new URLSearchParams(queryString || 'attempt=0');
+                                const currentAttempt = (parseInt(urlParams.get('attempt')) || 0) + 1;
+
+                                if (currentAttempt >= 3) {
+                                    rowUpdate.status = -1;
+                                    rowUpdate.error = `${decoded.error_code}: ${decoded.description}`;
+                                    skipMedia = true;
+                                } else {
+                                    params.media[index].media = `${urlBase}?attempt=${currentAttempt}`;
+                                }
+                            });
+                            rowUpdate.params = JSON.stringify(params);
+                        } else if (params.photo) {
+                            const [urlBase, queryString] = params.photo.split('?');
+                            const urlParams = new URLSearchParams(queryString || 'attempt=0');
+                            const currentAttempt = (parseInt(urlParams.get('attempt')) || 0) + 1;
+                            params.photo = `${urlBase}?attempt=${currentAttempt}`;
+                            rowUpdate.params = JSON.stringify(params);
+                        }
+
+                        if (decoded.parameters && decoded.parameters.migrate_to_chat_id) {
+                            rowUpdate.chat_id = decoded.parameters.migrate_to_chat_id;
+                            params.chat_id = decoded.parameters.migrate_to_chat_id;
+                            rowUpdate.params = JSON.stringify(params);
+                        } else if (rowUpdate.status !== -1) {
+                            rowUpdate.status = -2;
+                            rowUpdate.error = `${decoded.error_code}: ${decoded.description}`;
+                        }
+                    } else {
+                        rowUpdate.status = -1;
+                        rowUpdate.error = `${decoded.error_code}: ${decoded.description}`;
+                    }
+                }
+
+                rowUpdate.update = helpers.toSqlDateString(new Date());
+                await db.updateRequest(db.requestsTableName, id, rowUpdate);
+                // --- Database Logic End ---
+            }));
+
+            allChunkPromises.push(chunkPromise);
+        }
+
+        // 3. Execute all chunks (and all proxies) simultaneously
+        await Promise.all(allChunkPromises);
+
     } catch (error) {
-        await helpers.sendErrorToGroup(error, "processor.js -> processNextQueue()")
+        await helpers.sendErrorToGroup(error, "processor.js -> processNextQueue()");
     }
 }
 
 const processNextHostMessages = async () => {
-    const result = await db.getBulkStatusChanges(db.bulkStatusChangeTableName)
+    const result = await db.getBulkStatusChanges(db.bulkStatusChangeTableName);
+    if (!result || result.rows.length === 0) return;
+
     try {
-        if (result === false) {return}
-        const datas = []
-        const responsePromises = result.rows.map(async row => {
+        for (const row of result.rows) {
+            let decoded = null;
+            const { id, ...rowUpdate } = row;
+
             try {
-                const data = JSON.parse(row.data)
-                datas.push(data)
-                const responsePromise = await fetch(`${row.host}/api/order/inoutReporterMessages`, {
+                const data = JSON.parse(row.data);
+                const response = await fetch(`${row.host}/api/order/inoutReporterMessages`, {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({data: data, status: row.transition_status})
-                })
-                return responsePromise
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: data, status: row.transition_status })
+                });
+                decoded = await response.json();
             } catch (error) {
-                return Promise.resolve({fetchFailed: true, error: error})
+                decoded = { ok: false, error_code: 500, description: error.message };
             }
-        })
 
-        const responses = await Promise.all(responsePromises)
-
-        const decodedPromises = responses.map(async response => {
-            if (!response.fetchFailed) {
-                return await response.json()
-            } else {
-                Promise.resolve({ok: false, error_code: 500, description: response.error.message})
-            }
-        })
-
-        const decodedRows = await Promise.all(decodedPromises)
-
-        const dbWritePromises = decodedRows.map(async (decoded, index) => {
-            const {id, ...row} = result.rows[index]
-            
             if (decoded && decoded.ok && decoded.response && decoded.token) {
-                row.status = 1
-                
-                const requests = helpers.generateTelegramApiRequests(decoded.response, decoded.token, row.host)
-                
+                rowUpdate.status = 1;
+                const requests = helpers.generateTelegramApiRequests(decoded.response, decoded.token, row.host);
+
                 if (requests.length > 0) {
-                    requests.map(async (tgApiRequestObj, index) => {
-                        return await db.addRequest(db.requestsTableName, tgApiRequestObj)
-                    })
-                    await Promise.all(requests)
+                    // Sequential DB insertion
+                    for (const tgReq of requests) {
+                        await db.addRequest(db.requestsTableName, tgReq);
+                    }
                 }
             } else {
-                row.status = -1
-                row.error = decoded && (decoded.error_code || decoded.description)
-                    ? `${decoded?.error_code ?? 'Error'}: ${decoded?.description ?? ''}`
-                    : 'Did not received success message, assuming as failure'
+                rowUpdate.status = -1;
+                rowUpdate.error = decoded?.description || 'Host response failed';
             }
 
-            row.update = helpers.toSqlDateString(new Date())
-            return await db.updateRequest(db.bulkStatusChangeTableName, id, row)
-        })
-
-        await Promise.all(dbWritePromises)
+            rowUpdate.update = helpers.toSqlDateString(new Date());
+            await db.updateRequest(db.bulkStatusChangeTableName, id, rowUpdate);
+        }
     } catch (error) {
-        await helpers.sendErrorToGroup(error, 'processor.js -> processNextHostMessages()')
+        await helpers.sendErrorToGroup(error, 'processor.js -> processNextHostMessages()');
     }
-    
 }
 
 const processNextDisabledChats = async () => {
@@ -248,26 +227,28 @@ const runClearDBSchedule = async () => {
 const runRequestHandler = () => {
     setTimeout(async () => {
         try {
-            await processNextQueue()
+            await processNextQueue();
         } catch (error) {
-            await helpers.sendErrorToGroup(error, 'processor.js -> runRequestHandler()')
+            await helpers.sendErrorToGroup(error, 'processor.js -> runRequestHandler()');
         }
-        runRequestHandler()
-    }, 1000)
+        runRequestHandler();
+    }, 1000); // Check for new unique recipients every 0.5 seconds
 }
 
 const runChangedOrderStatusesRequestHandler = async () => {
-    await processNextHostMessages()
-    runChangedOrderStatusesRequestHandler()
+    try {
+        await processNextHostMessages();
+    } catch (e) { console.error(e); }
+    setTimeout(runChangedOrderStatusesRequestHandler, 5000);
 }
 
 const runDisabledChatsHandler = async () => {
     try {
-        await processNextDisabledChats()
+        await processNextDisabledChats();
     } catch (error) {
-        await helpers.sendErrorToGroup(error, 'processor.js -> runDisabledChatsHandler()')
+        await helpers.sendErrorToGroup(error, 'processor.js -> runDisabledChatsHandler()');
     }
-    runDisabledChatsHandler()
+    setTimeout(runDisabledChatsHandler, 10000);
 }
 
 module.exports = {runRequestHandler, runChangedOrderStatusesRequestHandler, runClearDBSchedule, runDisabledChatsHandler}
