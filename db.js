@@ -75,8 +75,7 @@ async function getRequests(tableName) {
             where r2.status = 0
             group by r2.chat_id, r2.token
         )
-        order by r.id asc
-        limit 50`;
+        order by r.id asc`;
     
     try {
         const result = await pool.query(sql);
@@ -110,8 +109,7 @@ async function getBulkStatusChanges(tableName) {
             b.*
         from ${tableName} b
         where b.status = 0
-        order by b.id asc
-        limit 50`;
+        order by b.id asc`;
     
     try {
         const result = await pool.query(sql);

@@ -95,7 +95,7 @@ const processNextQueue = async () => {
             }));
 
             // 3. Small pause between batches to allow Webhook '/add' requests to breathe
-            await new Promise(r => setTimeout(r, 100));
+            await new Promise(r => setTimeout(r, 500));
         }
     } catch (error) {
         await helpers.sendErrorToGroup(error, "processor.js -> processNextQueue()");
