@@ -13,7 +13,7 @@ const processNextQueue = async () => {
     if (!result || result.rows.length === 0) return;
 
     try {
-        const CHUNK_SIZE = 10; 
+        const CHUNK_SIZE = 20; 
         const rows = result.rows;
 
         // 1. Process batches SEQUENTIALLY to prevent network/proxy saturation
@@ -103,14 +103,11 @@ const processNextQueue = async () => {
 };
 
 const processNextHostMessages = async () => {
-    // Fetch up to 10 pending status changes
     const result = await db.getBulkStatusChanges(db.bulkStatusChangeTableName);
     if (!result || result.rows.length === 0) return;
 
     try {
         const rows = result.rows;
-
-        // Process all 10 rows in parallel to improve throughput
         await Promise.all(rows.map(async (row) => {
             let decoded = null;
             const { id, ...rowUpdate } = row;
