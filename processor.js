@@ -15,21 +15,21 @@ const processNextQueue = async () => {
     try {
         const CHUNK_SIZE = 10; 
         const rows = result.rows;
+        const allChunkPromises = [];
 
-        // 1. Process batches SEQUENTIALLY to prevent network/proxy saturation
+        // 1. Group rows into chunks and assign a proxy to each group
         for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
             const chunk = rows.slice(i, i + CHUNK_SIZE);
             
-            // Assign a unique proxy for this specific batch
+            // Assign a unique proxy for this specific batch of 10
             const chunkProxyAgent = new ProxyAgent(info.getRandomProxyUrl());
 
-            // 2. Process rows WITHIN this chunk concurrently
-            await Promise.all(chunk.map(async (row) => {
+            // 2. Map this chunk into a "Batch Promise"
+            const chunkPromise = Promise.all(chunk.map(async (row) => {
                 let decoded = null;
-                let response = null;
 
                 try {
-                    response = await fetch(`${row.url}${row.method}`, {
+                    const response = await fetch(`${row.url}${row.method}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: row.params,
@@ -40,84 +40,80 @@ const processNextQueue = async () => {
                     decoded = { ok: false, error_code: 500, description: error.message };
                 }
 
+                // --- Database Logic Start ---
                 const { id, ...rowUpdate } = row;
 
-                if (decoded && decoded.ok) {
+                if (decoded.ok) {
                     rowUpdate.status = 1;
                 } else {
-                    decoded = decoded || {};
-                    
-                    // Logic for specific Telegram errors (400 Bad Request)
                     if (decoded.error_code == 400) {
                         const params = JSON.parse(rowUpdate.params);
-                        
-                        // Media retry logic
-                        if (params.media || params.photo) {
-                            const isMediaGroup = !!params.media;
-                            const mediaUrl = isMediaGroup ? params.media[0].media : params.photo;
-                            
-                            const [urlBase, query] = (mediaUrl || "").split('?');
-                            const urlParams = new URLSearchParams(query || 'attempt=0');
-                            const currentAttempt = (parseInt(urlParams.get('attempt')) || 0) + 1;
+                        if (params.media) {
+                            let skipMedia = false;
+                            params.media.forEach((media, index) => {
+                                if (skipMedia) return;
+                                const [urlBase, queryString] = media.media.split('?');
+                                const urlParams = new URLSearchParams(queryString || 'attempt=0');
+                                const currentAttempt = (parseInt(urlParams.get('attempt')) || 0) + 1;
 
-                            if (currentAttempt >= 3) {
-                                rowUpdate.status = -1;
-                                rowUpdate.error = `${decoded.error_code}: ${decoded.description}`;
-                            } else {
-                                const newMediaUrl = `${urlBase}?attempt=${currentAttempt}`;
-                                if (isMediaGroup) {
-                                    params.media[0].media = newMediaUrl;
+                                if (currentAttempt >= 3) {
+                                    rowUpdate.status = -1;
+                                    rowUpdate.error = `${decoded.error_code}: ${decoded.description}`;
+                                    skipMedia = true;
                                 } else {
-                                    params.photo = newMediaUrl;
+                                    params.media[index].media = `${urlBase}?attempt=${currentAttempt}`;
                                 }
-                                rowUpdate.params = JSON.stringify(params);
-                                // Stay at status 0 to retry
-                            }
-                        } else if (decoded.parameters && decoded.parameters.migrate_to_chat_id) {
+                            });
+                            rowUpdate.params = JSON.stringify(params);
+                        } else if (params.photo) {
+                            const [urlBase, queryString] = params.photo.split('?');
+                            const urlParams = new URLSearchParams(queryString || 'attempt=0');
+                            const currentAttempt = (parseInt(urlParams.get('attempt')) || 0) + 1;
+                            params.photo = `${urlBase}?attempt=${currentAttempt}`;
+                            rowUpdate.params = JSON.stringify(params);
+                        }
+
+                        if (decoded.parameters && decoded.parameters.migrate_to_chat_id) {
                             rowUpdate.chat_id = decoded.parameters.migrate_to_chat_id;
                             params.chat_id = decoded.parameters.migrate_to_chat_id;
                             rowUpdate.params = JSON.stringify(params);
-                        } else {
+                        } else if (rowUpdate.status !== -1) {
                             rowUpdate.status = -2;
                             rowUpdate.error = `${decoded.error_code}: ${decoded.description}`;
                         }
                     } else {
-                        // General Error Handling (prevents undefined: undefined)
                         rowUpdate.status = -1;
-                        const errorCode = decoded.error_code || (response ? response.status : 'N/A');
-                        const description = decoded.description || decoded.message || 'Unknown Error';
-                        rowUpdate.error = `${errorCode}: ${description}`;
+                        rowUpdate.error = `${decoded.error_code}: ${decoded.description}`;
                     }
                 }
 
                 rowUpdate.update = helpers.toSqlDateString(new Date());
                 await db.updateRequest(db.requestsTableName, id, rowUpdate);
+                // --- Database Logic End ---
             }));
 
-            // 3. Small pause between batches to allow Webhook '/add' requests to breathe
-            await new Promise(r => setTimeout(r, 100));
+            allChunkPromises.push(chunkPromise);
         }
+
+        // 3. Execute all chunks (and all proxies) simultaneously
+        await Promise.all(allChunkPromises);
+
     } catch (error) {
         await helpers.sendErrorToGroup(error, "processor.js -> processNextQueue()");
     }
-};
+}
 
 const processNextHostMessages = async () => {
-    // Fetch up to 10 pending status changes
     const result = await db.getBulkStatusChanges(db.bulkStatusChangeTableName);
     if (!result || result.rows.length === 0) return;
 
     try {
-        const rows = result.rows;
-
-        // Process all 10 rows in parallel to improve throughput
-        await Promise.all(rows.map(async (row) => {
+        for (const row of result.rows) {
             let decoded = null;
             const { id, ...rowUpdate } = row;
 
             try {
                 const data = JSON.parse(row.data);
-                // Send the update to the host API
                 const response = await fetch(`${row.host}/api/order/inoutReporterMessages`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -128,28 +124,24 @@ const processNextHostMessages = async () => {
                 decoded = { ok: false, error_code: 500, description: error.message };
             }
 
-            // If host accepts the update and provides new bot messages
             if (decoded && decoded.ok && decoded.response && decoded.token) {
                 rowUpdate.status = 1;
                 const requests = helpers.generateTelegramApiRequests(decoded.response, decoded.token, row.host);
 
                 if (requests.length > 0) {
-                    // Queue the new Telegram messages into the main requests table
+                    // Sequential DB insertion
                     for (const tgReq of requests) {
                         await db.addRequest(db.requestsTableName, tgReq);
                     }
                 }
             } else {
-                // Mark as failed if host returns error or invalid data
                 rowUpdate.status = -1;
                 rowUpdate.error = decoded?.description || 'Host response failed';
             }
 
-            // Update the status in the bulk_status_changes table
             rowUpdate.update = helpers.toSqlDateString(new Date());
             await db.updateRequest(db.bulkStatusChangeTableName, id, rowUpdate);
-        }));
-        
+        }
     } catch (error) {
         await helpers.sendErrorToGroup(error, 'processor.js -> processNextHostMessages()');
     }
@@ -232,34 +224,31 @@ const runClearDBSchedule = async () => {
     })
 }
 
-const runRequestHandler = async () => {
-    try {
-        await processNextQueue();
-    } catch (error) {
-        await helpers.sendErrorToGroup(error, 'processor.js -> runRequestHandler()');
-    } finally {
-        setTimeout(runRequestHandler, 1000);
-    }
-};
+const runRequestHandler = () => {
+    setTimeout(async () => {
+        try {
+            await processNextQueue();
+        } catch (error) {
+            await helpers.sendErrorToGroup(error, 'processor.js -> runRequestHandler()');
+        }
+        runRequestHandler();
+    }, 1000); // Check for new unique recipients every 0.5 seconds
+}
 
 const runChangedOrderStatusesRequestHandler = async () => {
     try {
         await processNextHostMessages();
-    } catch (error) {
-        await helpers.sendErrorToGroup(error, 'processor.js -> runChangedOrderStatusesRequestHandler()');
-    } finally {
-        setTimeout(runChangedOrderStatusesRequestHandler, 5000);
-    }
-};
+    } catch (e) { console.error(e); }
+    setTimeout(runChangedOrderStatusesRequestHandler, 5000);
+}
 
 const runDisabledChatsHandler = async () => {
     try {
         await processNextDisabledChats();
     } catch (error) {
         await helpers.sendErrorToGroup(error, 'processor.js -> runDisabledChatsHandler()');
-    } finally {
-        setTimeout(runDisabledChatsHandler, 10000);
     }
-};
+    setTimeout(runDisabledChatsHandler, 10000);
+}
 
 module.exports = {runRequestHandler, runChangedOrderStatusesRequestHandler, runClearDBSchedule, runDisabledChatsHandler}

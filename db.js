@@ -66,61 +66,66 @@ async function updateRequest(tableName, id, newRow) {
 }
 
 async function getRequests(tableName) {
-    const sql = `
-        select r.*
+    // const pgClient = await newPgClient()
+    const sql =
+        `select 
+            r.*
         from ${tableName} r
         where r.id in (
             select min(r2.id) 
             from ${tableName} r2
             where r2.status = 0
             group by r2.chat_id, r2.token
-        )
-        and (r.update is null or r.update < (now() - interval '1 second'))
-        order by r.id asc
-        limit 50`;
+        )`
     
     try {
-        const result = await pool.query(sql);
-        return result;
+        const result = await pool.query(sql)
+        // await pgClient.end()
+        return result
     } catch (error) {
-        await helpers.sendErrorToGroup(error, 'db.js -> getRequests()');
-        return false;
+        await helpers.sendErrorToGroup(error, 'db.js -> getRequests()')
+        // await pgClient.end()
+        return false
     }
 }
 
 async function getDisabledChatRequests(tableName) {
-    const sql = `
-        select r.*
+    // const pgClient = await newPgClient()
+    const sql =
+        `select 
+            r.*
         from ${tableName} r
-        where status = -2
-        and (r.update is null or r.update < (now() - interval '10 seconds'))
-        limit 50`;
+        where status = -2`
     
     try {
-        const result = await pool.query(sql);
-        return result;
+        const result = await pool.query(sql)
+        // await pgClient.end()
+        return result
     } catch (error) {
-        await helpers.sendErrorToGroup(error, 'db.js -> getDisabledChatRequests()');
-        return false;
+        await helpers.sendErrorToGroup(error, 'db.js -> getRequests()')
+        // await pgClient.end()
+        return false
     }
 }
 
 async function getBulkStatusChanges(tableName) {
-    const sql = `
-        select 
+    // const pgClient = await newPgClient()
+    const sql =
+        `select 
             b.*
         from ${tableName} b
         where b.status = 0
-        and (b.update is null or b.update < (now() - interval '2 seconds'))
         order by b.id asc
-        limit 50`;
+        limit 10`
     
     try {
-        const result = await pool.query(sql);
-        return result;
+        const result = await pool.query(sql)
+        // await pgClient.end()
+        return result
     } catch (error) {
-        await helpers.sendErrorToGroup(error, 'db.js -> getBulkStatusChanges()');
-        return false;
+        await helpers.sendErrorToGroup(error, 'db.js -> getBulkStatusChanges()')
+        // await pgClient.end()
+        return false
     }
 }
 

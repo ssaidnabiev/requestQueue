@@ -66,14 +66,8 @@ app.listen(3000, async () => {
 // report error to group
 process.on('uncaughtException', async (err, origin) => {
     await helpers.sendErrorToGroup(err, origin)
-    console.error('uncaughtException detected');
-    try {
-        await helpers.sendErrorToGroup(err, origin);
-    } catch (e) {
-        console.error('Critical failure reporting error:', e);
-    }
-    // processor.runRequestHandler()
-    // processor.runChangedOrderStatusesRequestHandler()
-    // processor.runClearDBSchedule()
-    // processor.runDisabledChatsHandler()
+    processor.runRequestHandler()
+    processor.runChangedOrderStatusesRequestHandler()
+    processor.runClearDBSchedule()
+    processor.runDisabledChatsHandler()
 })
