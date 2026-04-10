@@ -76,7 +76,7 @@ async function getRequests(tableName) {
             group by r2.chat_id, r2.token
         )
         order by r.id asc
-        limit 50`;
+        limit 100`;
     
     try {
         const result = await pool.query(sql);
@@ -92,8 +92,8 @@ async function getDisabledChatRequests(tableName) {
         select r.*
         from ${tableName} r
         where status = -2
-        and (r.update is null or r.update < (now() - interval '10 seconds'))
-        limit 50`;
+        and (r.update is null or r.update < (now() - interval '5 seconds'))
+        limit 100`;
     
     try {
         const result = await pool.query(sql);
@@ -111,7 +111,7 @@ async function getBulkStatusChanges(tableName) {
         from ${tableName} b
         where b.status = 0
         order by b.id asc
-        limit 50`;
+        limit 100`;
     
     try {
         const result = await pool.query(sql);
