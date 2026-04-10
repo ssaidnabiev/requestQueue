@@ -75,7 +75,6 @@ async function getRequests(tableName) {
             where r2.status = 0
             group by r2.chat_id, r2.token
         )
-        and (r.update is null or r.update < (now() - interval '1 second'))
         order by r.id asc
         limit 50`;
     
@@ -111,7 +110,6 @@ async function getBulkStatusChanges(tableName) {
             b.*
         from ${tableName} b
         where b.status = 0
-        and (b.update is null or b.update < (now() - interval '2 seconds'))
         order by b.id asc
         limit 50`;
     
